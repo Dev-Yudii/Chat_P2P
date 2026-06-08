@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P2P Chat — {{ name }}</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.6.1/socket.io.min.js"></script>
+<style>
+  :root {
+    --bg:        #0f1117;
+    --bg2:       #161b22;
+    --bg3:       #1c2333;
+    --border:    #30363d;
+    --accent:    #58a6ff;
+    --accent2:   #3fb950;
+    --warn:      #d29922;
+    --danger:    #f85149;
+    --text:      #e6edf3;
+    --text2:     #8b949e;
+    --me:        #1f6feb;
+    --them:      #21262d;
+    --radius:    10px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--text);
+    height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+  }
+
+  /* ── Top Bar ── */
+  #topbar {
+    background: var(--bg2); border-bottom: 1px solid var(--border);
+    padding: 10px 20px; display: flex; align-items: center; gap: 16px;
+    flex-shrink: 0;
+  }
+  #topbar .logo { font-weight: 700; font-size: 1.1rem; color: var(--accent); letter-spacing: 1px; }
+  #topbar .badge {
+    font-size: 0.75rem; padding: 3px 10px; border-radius: 20px;
+    background: var(--bg3); border: 1px solid var(--border);
+  }
+  #topbar .badge.leader { border-color: var(--warn); color: var(--warn); }
+  #topbar .badge.connected { border-color: var(--accent2); color: var(--accent2); }
+  #topbar .spacer { flex: 1; }
+  #leader-badge { }
+  #self-badge { border-color: var(--accent) !important; color: var(--accent) !important; }
+
+  /* ── Layout ── */
+  #main {
+    flex: 1; display: flex; overflow: hidden;
+  }
+
+  /* ── Sidebar ── */
+  #sidebar {
+    width: 280px; background: var(--bg2); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden;
+  }
+  #sidebar h3 {
+    font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--text2); padding: 14px 16px 8px; border-bottom: 1px solid var(--border);
+  }
+  #peer-list {
+    flex: 1; overflow-y: auto; padding: 8px;
+  }
+  .peer-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; border-radius: var(--radius);
+    margin-bottom: 4px; background: var(--bg3);
+    font-size: 0.85rem; cursor: default;
+    border: 1px solid transparent; transition: border-color 0.2s;
+  }
+  .peer-item.leader { border-color: var(--warn); }
+  .peer-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  }
+  .peer-dot.on  { background: var(--accent2); box-shadow: 0 0 6px var(--accent2); }
+  .peer-dot.off { background: var(--text2); }
+  .peer-name { flex: 1; font-weight: 500; }
+  .peer-crown { font-size: 0.8rem; }
+  .peer-host { font-size: 0.7rem; color: var(--text2); }
+  .peer-connect-btn {
+    font-size: 0.7rem; padding: 2px 8px; border-radius: 6px;
+    background: transparent; border: 1px solid var(--accent);
+    color: var(--accent); cursor: pointer;
+  }
+  .peer-connect-btn:hover { background: var(--accent); color: #000; }
+
+  /* ── Connect Form ── */
+  #connect-form {
+    border-top: 1px solid var(--border); padding: 12px;
+  }
+  #connect-form label {
+    font-size: 0.7rem; color: var(--text2); text-transform: uppercase;
+    letter-spacing: 0.5px; display: block; margin-bottom: 6px;
+  }
+  .input-row { display: flex; gap: 6px; margin-bottom: 6px; }
+  #connect-form input {
+    flex: 1; background: var(--bg3); border: 1px solid var(--border);
+    color: var(--text); padding: 6px 10px; border-radius: 6px; font-size: 0.82rem;
+    outline: none;
+  }
+  #connect-form input:focus { border-color: var(--accent); }
+  #connect-form input[name="port"] { width: 80px; flex: none; }
+  #connect-btn {
+    width: 100%; padding: 7px; background: var(--accent); color: #000;
+    border: none; border-radius: 6px; font-weight: 600; cursor: pointer;
+    font-size: 0.85rem; transition: opacity 0.2s;
+  }
+  #connect-btn:hover { opacity: 0.85; }
+
+  /* ── Chat ── */
+  #chat-area {
+    flex: 1; display: flex; flex-direction: column; overflow: hidden;
+  }
+  #messages {
+    flex: 1; overflow-y: auto; padding: 20px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .msg-wrap { display: flex; flex-direction: column; max-width: 65%; }
+  .msg-wrap.own { align-self: flex-end; align-items: flex-end; }
+  .msg-wrap.other { align-self: flex-start; align-items: flex-start; }
+  .msg-sender { font-size: 0.72rem; color: var(--text2); margin-bottom: 3px; padding: 0 4px; }
+  .msg-bubble {
+    padding: 9px 14px; border-radius: 14px; font-size: 0.9rem;
+    line-height: 1.45; word-break: break-word; max-width: 100%;
+  }
+  .msg-wrap.own  .msg-bubble { background: var(--me); border-bottom-right-radius: 4px; }
+  .msg-wrap.other .msg-bubble { background: var(--them); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+  .msg-time { font-size: 0.68rem; color: var(--text2); margin-top: 3px; padding: 0 4px; }
+
+  .sys-msg {
+    align-self: center; font-size: 0.75rem; color: var(--text2);
+    background: var(--bg3); padding: 4px 14px; border-radius: 20px;
+    border: 1px solid var(--border);
+  }
+
+  /* ── Input Bar ── */
+  #input-bar {
+    border-top: 1px solid var(--border);
+    padding: 14px 20px; display: flex; gap: 10px; background: var(--bg2);
+    flex-shrink: 0;
+  }
+  #msg-input {
+    flex: 1; background: var(--bg3); border: 1px solid var(--border);
+    color: var(--text); padding: 10px 14px; border-radius: 8px;
+    font-size: 0.92rem; outline: none; resize: none; height: 42px;
+    line-height: 1.4; font-family: inherit;
+  }
+  #msg-input:focus { border-color: var(--accent); }
+  #send-btn {
+    padding: 10px 20px; background: var(--accent); color: #000;
+    border: none; border-radius: 8px; font-weight: 600;
+    cursor: pointer; font-size: 0.9rem; transition: opacity 0.2s;
+  }
+  #send-btn:hover { opacity: 0.85; }
+
+  /* ── Empty state ── */
+  #empty-state {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 10px; color: var(--text2);
+    height: 100%; font-size: 0.9rem;
+  }
+  #empty-state .icon { font-size: 2.5rem; }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* toast */
+  #toast {
+    position: fixed; bottom: 20px; right: 20px;
+    background: var(--bg3); border: 1px solid var(--border);
+    color: var(--text); padding: 10px 18px; border-radius: 8px;
+    font-size: 0.85rem; opacity: 0; pointer-events: none;
+    transition: opacity 0.3s; z-index: 999;
+  }
+  #toast.show { opacity: 1; }
+  #toast.success { border-color: var(--accent2); color: var(--accent2); }
+  #toast.error   { border-color: var(--danger);  color: var(--danger); }
+</style>
+</head>
+<body>
+
+<!-- Top Bar -->
+<div id="topbar">
+  <span class="logo">⬡ P2P CHAT</span>
+  <span class="badge" id="self-badge">{{ name }}</span>
+  <span class="badge leader" id="leader-badge">Líder: …</span>
+  <span class="badge connected" id="peers-badge">0 usuários</span>
+  <span class="spacer"></span>
+  <span class="badge" id="status-badge" style="border-color: var(--accent2); color: var(--accent2);">● online</span>
+  <button id="disconnect-btn" style="background-color: var(--danger); color: white; border: none; padding: 8px 16px; border-radius: var(--radius); cursor: pointer; font-weight: bold;">
+    Sair
+  </button>
+</div>
+
+<!-- Main -->
+<div id="main">
+
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <h3>Usuários na Rede</h3>
+    <div id="peer-list">
+      <div style="padding:16px;font-size:0.8rem;color:var(--text2);text-align:center">
+        Aguardando Usuários…
+      </div>
+    </div>
+    <!--
+    <div id="connect-form">
+      <label>Conectar manualmente</label>
+      <div class="input-row">
+        <input name="host" placeholder="IP (ex: 192.168.1.5)" value="127.0.0.1">
+        <input name="port" placeholder="Porta" type="number" value="5001">
+      </div>
+      <button id="connect-btn">Conectar</button>
+    </div>
+    -->
+  </div>
+
+  <!-- Chat -->
+  <div id="chat-area">
+    <div id="messages">
+      <div id="empty-state">
+        <span class="icon">💬</span>
+        <span>Nenhuma mensagem ainda.</span>
+      </div>
+    </div>
+    <div id="input-bar">
+      <textarea id="msg-input" placeholder="Escreva uma mensagem…" rows="1"></textarea>
+      <button id="send-btn">Enviar</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const MY_NAME = "{{ name }}";
+const socket = io();
+let msgCount = 0;
+
+// ── Socket events ──────────────────────────────────────────────────────────
+
+socket.on("connect", () => {
+  const badge = document.getElementById("status-badge");
+  badge.textContent = "● online";
+  badge.style.color = "var(--accent2)";
+  badge.style.borderColor = "var(--accent2)";
+});
+
+socket.on("disconnect", () => {
+  const badge = document.getElementById("status-badge");
+  badge.textContent = "● offline";
+  badge.style.color = "var(--danger)";
+  badge.style.borderColor = "var(--danger)";
+});
+
+socket.on("network_update", (data) => {
+  updateTopbar(data);
+  updatePeerList(data);
+});
+
+socket.on("chat_message", (msg) => {
+  appendMessage(msg);
+});
+
+socket.on("system_event", (ev) => {
+  appendSystemMsg(ev.text);
+});
+
+socket.on("history", (msgs) => {
+  const chatMsgs = msgs.filter(m => m.type === "CHAT");
+  if (chatMsgs.length === 0) return;
+  chatMsgs.forEach(m => appendMessage({
+    sender: m.sender,
+    content: m.message,
+    timestamp: m.timestamp,
+    id: m.id,
+    own: m.sender === MY_NAME,
+    fromHistory: true
+  }));
+  appendSystemMsg("── histórico carregado ──");
+  scrollBottom();
+});
+
+socket.on("connect_result", (data) => {
+  showToast(
+    data.success ? `✓ Conectado a ${data.name}` : `✗ Falha ao conectar em ${data.port}`,
+    data.success ? "success" : "error"
+  );
+});
+
+// ── UI update ──────────────────────────────────────────────────────────────
+
+function updateTopbar(data) {
+  // Mantém a lógica do líder intacta
+  document.getElementById("leader-badge").textContent =
+    data.is_leader ? `👑 Você é o Líder` : `Líder: ${data.leader}`;
+  
+  const badge = document.getElementById("peers-badge");
+  const totalUsuarios = data.peer_count + 1;
+
+  if (totalUsuarios === 1) {
+    badge.textContent = "Sozinho na sala";
+    badge.style.color = "var(--warn)";           // Texto Amarelo
+    badge.style.borderColor = "var(--warn)";     // Borda Amarela
+    badge.style.backgroundColor = "var(--bg3)";   // Fundo escuro padrão
+  } else {
+    badge.textContent = `${totalUsuarios} usuários conectados`;
+    badge.style.color = "var(--accent2)";        // Texto Verde
+    badge.style.borderColor = "var(--accent2)";  // Borda Verde
+    badge.style.backgroundColor = "var(--bg3)";   // Fundo escuro padrão
+  }
+}
+
+function updatePeerList(data) {
+  const list = document.getElementById("peer-list");
+  list.innerHTML = ""; // Limpa a lista para renderizar do zero de forma limpa
+
+  // 1. Injeta VOCÊ mesmo sempre no topo da lista de forma fixa
+  const selfDiv = document.createElement("div");
+  selfDiv.className = "peer-item" + (data.is_leader ? " leader" : "");
+  
+  // Destaca a sua caixinha com a cor azul do seu tema (--accent)
+  selfDiv.style.borderColor = "var(--accent)"; 
+  
+  selfDiv.innerHTML = `
+    <span class="peer-dot on" style="background: var(--accent); box-shadow: 0 0 6px var(--accent);"></span>
+    <span class="peer-name" style="color: var(--accent); font-weight: bold;">${data.name} (Você)</span>
+    ${data.is_leader ? '<span class="peer-crown">👑</span>' : ''}
+    <span class="peer-host">127.0.0.1:${data.port}</span>
+  `;
+  list.appendChild(selfDiv);
+
+  // 2. Filtra e renderiza os OUTROS usuários conectados na rede
+  const connected = (data.peers || []).filter(p => p.connected);
+
+  // Se houver mais alguém, renderiza logo abaixo de você
+  connected.sort((a,b) => b.port - a.port).forEach(p => {
+    const isLeader = p.port === data.leader_port;
+    const div = document.createElement("div");
+    div.className = "peer-item" + (isLeader ? " leader" : "");
+    div.innerHTML = `
+      <span class="peer-dot on"></span>
+      <span class="peer-name">${p.name}</span>
+      ${isLeader ? '<span class="peer-crown">👑</span>' : ''}
+      <span class="peer-host">${p.host}:${p.port}</span>
+    `;
+    list.appendChild(div);
+  });
+}
+
+// ── Messages ───────────────────────────────────────────────────────────────
+
+function appendMessage(msg) {
+  const empty = document.getElementById("empty-state");
+  if (empty) empty.remove();
+
+  const isOwn = msg.own || msg.sender === MY_NAME;
+  const wrap = document.createElement("div");
+  wrap.className = `msg-wrap ${isOwn ? "own" : "other"}`;
+  wrap.id = `msg-${msg.id}`;
+
+  const time = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString("pt-BR", {hour:"2-digit",minute:"2-digit"}) : "";
+
+  wrap.innerHTML = `
+    ${!isOwn ? `<span class="msg-sender">${escHtml(msg.sender)}</span>` : ""}
+    <div class="msg-bubble">${escHtml(msg.content)}</div>
+    <span class="msg-time">${time}</span>
+  `;
+
+  // Evita duplicatas
+  if (!document.getElementById(`msg-${msg.id}`)) {
+    document.getElementById("messages").appendChild(wrap);
+  }
+  msgCount++;
+  if (!msg.fromHistory) scrollBottom();
+}
+
+function appendSystemMsg(text) {
+  const el = document.createElement("div");
+  el.className = "sys-msg";
+  el.textContent = text;
+  document.getElementById("messages").appendChild(el);
+  scrollBottom();
+}
+
+function scrollBottom() {
+  const el = document.getElementById("messages");
+  el.scrollTop = el.scrollHeight;
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+// ── Send ───────────────────────────────────────────────────────────────────
+
+function sendMessage() {
+  const input = document.getElementById("msg-input");
+  const content = input.value.trim();
+  if (!content) return;
+  socket.emit("send_message", { content });
+  input.value = "";
+  input.style.height = "42px";
+}
+
+document.getElementById("send-btn").addEventListener("click", sendMessage);
+document.getElementById("msg-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+});
+// Auto-resize textarea
+document.getElementById("msg-input").addEventListener("input", function() {
+  this.style.height = "42px";
+  this.style.height = Math.min(this.scrollHeight, 120) + "px";
+});
+
+// ── Connect ────────────────────────────────────────────────────────────────
+
+// ── Connect ────────────────────────────────────────────────────────────────
+
+// Verifica se o botão realmente existe antes de tentar aplicar o evento
+const connectBtn = document.getElementById("connect-btn");
+if (connectBtn) {
+  connectBtn.addEventListener("click", () => {
+    const host = document.querySelector('input[name="host"]').value.trim() || "127.0.0.1";
+    const port = parseInt(document.querySelector('input[name="port"]').value.trim());
+    if (!port) { showToast("Porta inválida", "error"); return; }
+    socket.emit("connect_to_peer", { host, port });
+  });
+}
+
+// Agora que o script acima não quebra mais, este evento vai rodar perfeitamente!
+document.getElementById("disconnect-btn").addEventListener("click", () => {
+    if (confirm("Deseja realmente sair da rede e fechar este nó?")) {
+        // 1. Modifica a tela IMEDIATAMENTE no front-end
+        document.body.innerHTML = `
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: #0f1117; color: #e6edf3; font-family: sans-serif;">
+                <h1 style="color: #f85149; margin-bottom: 10px;">🔴 Desconectado</h1>
+                <p>Você saiu da rede P2P e o terminal foi encerrado.</p>
+            </div>
+        `;
+        
+        // 2. Avisa o backend para desligar
+        fetch("/api/disconnect", { method: "POST" })
+        .catch(err => console.log("Nó encerrado com sucesso."));
+    }
+});
+
+function connectToPeer(host, port) {
+  socket.emit("connect_to_peer", { host, port });
+}
+
+// ── Toast ──────────────────────────────────────────────────────────────────
+
+let toastTimer;
+function showToast(msg, type = "") {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.className = "show " + type;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.className = ""; }, 3000);
+}
+
+// ── Periodic refresh ───────────────────────────────────────────────────────
+setInterval(() => socket.emit("request_status"), 5000);
+</script>
+</body>
+</html>

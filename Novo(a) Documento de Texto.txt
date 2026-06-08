@@ -1,0 +1,6 @@
+python app.py 5001 --name "Caio"
+python app.py 5002 --name "Daniel"
+python app.py 5003 --name "Fabio"
+python app.py 5004 --name "Felipe"
+python app.py 5005 --name "Letícia"
+python app.py 5006 --name "Miguel"

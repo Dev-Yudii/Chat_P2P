@@ -1,0 +1,26 @@
+[
+  {
+    "id": "62e7ff0d-483b-48e3-8960-7804b1669dad",
+    "type": "CHAT",
+    "sender": "Daniel",
+    "message": "oi",
+    "timestamp": "2026-06-08T17:37:35.043332+00:00",
+    "hops": 0
+  },
+  {
+    "id": "8dbd2b2f-50f2-4936-a47c-68ce3efc870d",
+    "type": "CHAT",
+    "sender": "Daniel",
+    "message": "Testando",
+    "timestamp": "2026-06-08T17:37:42.298121+00:00",
+    "hops": 0
+  },
+  {
+    "id": "621aa0ba-6f0a-4b66-9474-700a488f4dca",
+    "type": "CHAT",
+    "sender": "Fabio",
+    "message": "oi",
+    "timestamp": "2026-06-08T17:39:06.007495+00:00",
+    "hops": 0
+  }
+]
